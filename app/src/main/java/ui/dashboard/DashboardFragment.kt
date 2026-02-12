@@ -454,7 +454,7 @@ class DashboardFragment : Fragment() {
     private fun updatePieChart(categoryMap: Map<String, Double>) {
         if (categoryMap.isEmpty()) {
             pieChart.clear()
-            pieChart.centerText = "No Data"
+            pieChart.centerText = "No Data found"
             return
         }
         val entries = categoryMap.map { PieEntry(it.value.toFloat(), it.key) }
