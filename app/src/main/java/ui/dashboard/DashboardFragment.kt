@@ -6,7 +6,6 @@ import android.content.pm.PackageManager
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
-import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
@@ -15,6 +14,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.ImageButton
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -40,6 +40,9 @@ import com.google.android.material.textfield.TextInputEditText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 import java.util.regex.Pattern
 
 class DashboardFragment : Fragment() {
@@ -52,11 +55,17 @@ class DashboardFragment : Fragment() {
     private lateinit var fabAdd: ExtendedFloatingActionButton
     private lateinit var progressBar: LinearProgressIndicator
     private lateinit var tvBudgetLeft: TextView
-    private lateinit var layoutEmptyState: View // The new "No Data" view
+    private lateinit var layoutEmptyState: View
+
+    // NEW: Month Navigation Views
+    private lateinit var tvMonthYear: TextView
+    private lateinit var btnPrevMonth: ImageButton
+    private lateinit var btnNextMonth: ImageButton
 
     // --- Config ---
     private var monthlyBudget = 5000.0
-    private var currentTransactions: MutableList<TransactionEntity> = mutableListOf() // Store list locally for swipe access
+    private var selectedCalendar = Calendar.getInstance() // Current Date
+    private var currentTransactions: MutableList<TransactionEntity> = mutableListOf()
 
     // Custom Colors
     private val CHART_COLORS = listOf(
@@ -85,63 +94,157 @@ class DashboardFragment : Fragment() {
         tvBudgetLeft = view.findViewById(R.id.tvBudgetLeft)
         layoutEmptyState = view.findViewById(R.id.layoutEmptyState)
 
+        // Month Nav Views
+        tvMonthYear = view.findViewById(R.id.tvMonthYear)
+        btnPrevMonth = view.findViewById(R.id.btnPrevMonth)
+        btnNextMonth = view.findViewById(R.id.btnNextMonth)
+
         rvTransactions.layoutManager = LinearLayoutManager(requireContext())
         rvTransactions.adapter = TransactionAdapter(emptyList())
 
-        // Setup Swipe-to-Delete
         setupSwipeToDelete()
-
         loadBudgetFromPrefs()
 
+        // --- CLICK LISTENERS ---
         fabAdd.setOnClickListener {
-            view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK) // Haptic!
+            view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
             showAddTransactionDialog()
         }
 
         tvBudgetLeft.setOnClickListener {
-            view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK) // Haptic!
+            view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
             showSetBudgetDialog()
+        }
+
+        // Month Navigation Logic
+        btnPrevMonth.setOnClickListener {
+            selectedCalendar.add(Calendar.MONTH, -1)
+            updateDateAndReload()
+        }
+        btnNextMonth.setOnClickListener {
+            selectedCalendar.add(Calendar.MONTH, 1)
+            updateDateAndReload()
         }
 
         setupPieChartStyle()
         checkPermissionAndLoad()
 
+        // Initial Date Set
+        updateDateText()
+
         return view
     }
 
-    // ================= SWIPE TO DELETE LOGIC =================
+    // ================= DATE NAVIGATION =================
+
+    private fun updateDateAndReload() {
+        updateDateText()
+        lifecycleScope.launch { loadDashboardData() }
+    }
+
+    private fun updateDateText() {
+        // Format: "February 2026"
+        val sdf = SimpleDateFormat("MMMM yyyy", Locale.getDefault())
+        tvMonthYear.text = sdf.format(selectedCalendar.time)
+    }
+
+    // ================= DASHBOARD DATA (FILTERED BY DATE) =================
+
+    private suspend fun loadDashboardData() {
+        val dao = AppDatabase.get(requireContext()).transactionDao()
+        val all = dao.getAll()
+
+        // 1. Filter by DEBIT + Selected Month/Year
+        val targetMonth = selectedCalendar.get(Calendar.MONTH)
+        val targetYear = selectedCalendar.get(Calendar.YEAR)
+
+        val filteredList = all.filter {
+            val txnDate = Calendar.getInstance()
+            txnDate.timeInMillis = it.timestamp
+
+            it.type == "DEBIT" &&
+                    txnDate.get(Calendar.MONTH) == targetMonth &&
+                    txnDate.get(Calendar.YEAR) == targetYear
+        }
+
+        // 2. Calculate Totals
+        var total = 0.0
+        val categoryMap = mutableMapOf<String, Double>()
+
+        filteredList.forEach {
+            total += it.amount
+            val cat = getCategory(it.merchant)
+            categoryMap[cat] = categoryMap.getOrDefault(cat, 0.0) + it.amount
+        }
+
+        currentTransactions = filteredList.sortedByDescending { it.timestamp }.toMutableList()
+        val recentList = currentTransactions
+
+        withContext(Dispatchers.Main) {
+            tvTotal.text = "₹${"%.2f".format(total)}"
+
+            // Empty State
+            if (recentList.isEmpty()) {
+                rvTransactions.visibility = View.GONE
+                layoutEmptyState.visibility = View.VISIBLE
+            } else {
+                rvTransactions.visibility = View.VISIBLE
+                layoutEmptyState.visibility = View.GONE
+            }
+
+            // Budget Bar
+            val budget = if (monthlyBudget == 0.0) 1.0 else monthlyBudget
+            val percentage = (total / budget) * 100
+            progressBar.progress = percentage.toInt()
+
+            val remaining = budget - total
+            if (remaining > 0) {
+                tvBudgetLeft.text = "₹${"%.0f".format(remaining)} left of ₹${"%.0f".format(budget)} budget\n(Tap to Edit)"
+            } else {
+                tvBudgetLeft.text = "Budget exceeded by ₹${"%.0f".format(Math.abs(remaining))}\n(Tap to Edit)"
+            }
+
+            // Colors
+            if (percentage < 70) {
+                progressBar.setIndicatorColor(Color.WHITE)
+                tvSmartInsight.text = "You are saving well! 👏"
+            } else if (percentage < 90) {
+                progressBar.setIndicatorColor(Color.parseColor("#FFEB3B"))
+                tvSmartInsight.text = "Careful, you're nearing your limit."
+            } else {
+                progressBar.setIndicatorColor(Color.parseColor("#FF5252"))
+                tvSmartInsight.text = "You overspent this month! 🚨"
+            }
+
+            updatePieChart(categoryMap)
+            rvTransactions.adapter = TransactionAdapter(recentList)
+        }
+    }
+
+    // ================= SWIPE TO DELETE =================
 
     private fun setupSwipeToDelete() {
         val swipeHandler = object : ItemTouchHelper.SimpleCallback(0, ItemTouchHelper.LEFT) {
-
-            // Draw the Red Background when swiping
             override fun onChildDraw(
                 c: Canvas, recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder,
                 dX: Float, dY: Float, actionState: Int, isCurrentlyActive: Boolean
             ) {
                 val itemView = viewHolder.itemView
-                val background = ColorDrawable(Color.parseColor("#FF5252")) // Red Color
+                val background = ColorDrawable(Color.parseColor("#FF5252"))
                 val icon = ContextCompat.getDrawable(requireContext(), android.R.drawable.ic_menu_delete)
 
-                // Draw Red Background
-                background.setBounds(
-                    itemView.right + dX.toInt(), itemView.top,
-                    itemView.right, itemView.bottom
-                )
+                background.setBounds(itemView.right + dX.toInt(), itemView.top, itemView.right, itemView.bottom)
                 background.draw(c)
 
-                // Draw Icon centered
                 icon?.let {
                     val iconMargin = (itemView.height - it.intrinsicHeight) / 2
                     val iconTop = itemView.top + (itemView.height - it.intrinsicHeight) / 2
                     val iconBottom = iconTop + it.intrinsicHeight
                     val iconLeft = itemView.right - iconMargin - it.intrinsicWidth
                     val iconRight = itemView.right - iconMargin
-
                     it.setBounds(iconLeft, iconTop, iconRight, iconBottom)
                     it.draw(c)
                 }
-
                 super.onChildDraw(c, recyclerView, viewHolder, dX, dY, actionState, isCurrentlyActive)
             }
 
@@ -150,33 +253,22 @@ class DashboardFragment : Fragment() {
             override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
                 val position = viewHolder.adapterPosition
                 val transactionToDelete = currentTransactions[position]
-
-                // Haptic Feedback
                 view?.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
-
                 deleteTransaction(transactionToDelete)
             }
         }
-
-        val itemTouchHelper = ItemTouchHelper(swipeHandler)
-        itemTouchHelper.attachToRecyclerView(rvTransactions)
+        ItemTouchHelper(swipeHandler).attachToRecyclerView(rvTransactions)
     }
 
     private fun deleteTransaction(transaction: TransactionEntity) {
         lifecycleScope.launch(Dispatchers.IO) {
             val dao = AppDatabase.get(requireContext()).transactionDao()
             dao.delete(transaction)
-
-            // Refresh UI
             loadDashboardData()
-
-            // Show Undo Snackbar
             withContext(Dispatchers.Main) {
                 Snackbar.make(rvTransactions, "Transaction deleted", Snackbar.LENGTH_LONG)
-                    .setAction("UNDO") {
-                        undoDelete(transaction)
-                    }
-                    .setAnchorView(fabAdd) // Show above FAB
+                    .setAction("UNDO") { undoDelete(transaction) }
+                    .setAnchorView(fabAdd)
                     .show()
             }
         }
@@ -201,67 +293,6 @@ class DashboardFragment : Fragment() {
         prefs.edit().putFloat("USER_BUDGET", newBudget.toFloat()).apply()
         monthlyBudget = newBudget
         lifecycleScope.launch { loadDashboardData() }
-    }
-
-    // ================= DASHBOARD DATA =================
-
-    private suspend fun loadDashboardData() {
-        val dao = AppDatabase.get(requireContext()).transactionDao()
-        val all = dao.getAll()
-        val expenseTransactions = all.filter { it.type == "DEBIT" }
-
-        var total = 0.0
-        val categoryMap = mutableMapOf<String, Double>()
-
-        expenseTransactions.forEach {
-            total += it.amount
-            val cat = getCategory(it.merchant)
-            categoryMap[cat] = categoryMap.getOrDefault(cat, 0.0) + it.amount
-        }
-
-        // Store globally for Swipe Handler
-        currentTransactions = expenseTransactions.sortedByDescending { it.timestamp }.toMutableList()
-        val recentList = currentTransactions.take(10)
-
-        withContext(Dispatchers.Main) {
-            tvTotal.text = "₹${"%.2f".format(total)}"
-
-            // Toggle Empty State
-            if (recentList.isEmpty()) {
-                rvTransactions.visibility = View.GONE
-                layoutEmptyState.visibility = View.VISIBLE
-            } else {
-                rvTransactions.visibility = View.VISIBLE
-                layoutEmptyState.visibility = View.GONE
-            }
-
-            // Budget Bar
-            val budget = if (monthlyBudget == 0.0) 1.0 else monthlyBudget
-            val percentage = (total / budget) * 100
-            progressBar.progress = percentage.toInt()
-
-            val remaining = budget - total
-            if (remaining > 0) {
-                tvBudgetLeft.text = "₹${"%.0f".format(remaining)} left of ₹${"%.0f".format(budget)} budget\n(Tap to Edit)"
-            } else {
-                tvBudgetLeft.text = "Budget exceeded by ₹${"%.0f".format(Math.abs(remaining))}\n(Tap to Edit)"
-            }
-
-            // Smart Colors
-            if (percentage < 70) {
-                progressBar.setIndicatorColor(Color.WHITE)
-                tvSmartInsight.text = "You are saving well! 👏"
-            } else if (percentage < 90) {
-                progressBar.setIndicatorColor(Color.parseColor("#FFEB3B"))
-                tvSmartInsight.text = "Careful, you're nearing your limit."
-            } else {
-                progressBar.setIndicatorColor(Color.parseColor("#FF5252"))
-                tvSmartInsight.text = "You overspent this month! 🚨"
-            }
-
-            updatePieChart(categoryMap)
-            rvTransactions.adapter = TransactionAdapter(recentList)
-        }
     }
 
     // ================= POPUPS =================
@@ -291,12 +322,9 @@ class DashboardFragment : Fragment() {
         val dialog = BottomSheetDialog(requireContext())
         val sheetView = layoutInflater.inflate(R.layout.bottom_sheet_set_budget, null)
         dialog.setContentView(sheetView)
-
         val etBudget = sheetView.findViewById<TextInputEditText>(R.id.etBudget)
         val btnSave = sheetView.findViewById<Button>(R.id.btnSave)
-
         etBudget.setText(monthlyBudget.toInt().toString())
-
         btnSave.setOnClickListener {
             val budgetStr = etBudget.text.toString()
             if (budgetStr.isNotEmpty()) {
@@ -308,10 +336,11 @@ class DashboardFragment : Fragment() {
         dialog.show()
     }
 
-    // ================= HELPERS =================
+    // ================= HELPERS (DB, SMS, PARSING) =================
 
     private fun saveManualTransaction(amount: Double, description: String) {
         lifecycleScope.launch(Dispatchers.IO) {
+            // Use selected calendar for manual entry date (optional, or use current time)
             val transaction = TransactionEntity(
                 merchant = description, amount = amount, timestamp = System.currentTimeMillis(), type = "DEBIT"
             )
