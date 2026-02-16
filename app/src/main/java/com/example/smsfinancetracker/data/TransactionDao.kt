@@ -1,15 +1,16 @@
 package com.example.smsfinancetracker.data
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import androidx.room.Delete
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TransactionDao {
     @Query("SELECT * FROM transactions")
-    suspend fun getAll(): List<TransactionEntity>
+    fun getAll(): Flow<List<TransactionEntity>>
 
     @Query("SELECT * FROM transactions WHERE timestamp BETWEEN :startTime AND :endTime")
     suspend fun getTransactionsInRange(startTime: Long, endTime: Long): List<TransactionEntity>
