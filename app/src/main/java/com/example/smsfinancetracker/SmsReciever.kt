@@ -21,86 +21,90 @@ class SmsReceiver : BroadcastReceiver() {
 
             messages?.forEach { sms ->
                 val body = sms.messageBody ?: ""
-                val sender = sms.originatingAddress ?: ""
+                val date = sms.timestampMillis
 
-                // 1. Check for KOTAK (Expense/Sent)
-                if (body.contains("Sent Rs.", ignoreCase = true)) {
-                    handleKotakExpense(context, body)
-                }
+                // Check for ANY expense keyword (not just "Sent Rs.")
+                if (body.contains("Sent Rs.", true) ||
+                    body.contains("debited", true) ||
+                    body.contains("spent", true) ||
+                    body.contains("paid", true)) {
 
-                // 2. Check for SBI (Income/Credit)
-                else if (body.contains("credited by Rs.", ignoreCase = true)) {
-                    handleSbiIncome(context, body)
+                    val amount = extractAmount(body)
+
+                    if (amount > 0) {
+                        val merchant = extractMerchant(body)
+                        saveTransaction(context, amount, merchant, date, "DEBIT")
+                    }
                 }
             }
         }
     }
 
-    // ================= KOTAK LOGIC (EXPENSE) =================
-    // Format: "Sent Rs.70.00 from Kotak Bank AC X9192 to 6396253142@pthdfc on..."
-    private fun handleKotakExpense(context: Context, body: String) {
-        val amount = extractAmount(body, "Sent Rs.")
-        var merchant = "Unknown"
+    // ================= SMART PARSING (SAME AS DASHBOARD) =================
 
-        // Extract merchant: Find text between "to " and " on"
-        // Example: "... to 6396253142@pthdfc on ..."
-        val merchantPattern = Pattern.compile("to\\s+(.*?)\\s+on")
-        val matcher = merchantPattern.matcher(body)
-        if (matcher.find()) {
-            merchant = matcher.group(1) ?: "Unknown"
-            // Clean up UPI IDs (optional)
-            if (merchant.contains("@")) {
-                merchant = merchant.split("@")[0] // Just take the name/number part
-            }
-        }
-
-        saveTransaction(context, amount, merchant, "DEBIT")
-        showToast(context, "Spent ₹$amount at $merchant")
-    }
-
-    // ================= SBI LOGIC (INCOME) =================
-    // Format: "...credited by Rs.5000.00 on ... -ANSHUMAN TRIPATHI..."
-    private fun handleSbiIncome(context: Context, body: String) {
-        val amount = extractAmount(body, "credited by Rs.")
-
-        // For income, "Merchant" is the Sender
-        saveTransaction(context, amount, "Deposit / Transfer", "CREDIT")
-        showToast(context, "Received ₹$amount")
-    }
-
-    // ================= HELPER FUNCTIONS =================
-
-    private fun extractAmount(body: String, keyword: String): Double {
-        // Look for the keyword followed by digits
-        // Escape the dot in "Rs." -> "Rs\\."
-        val escapedKeyword = keyword.replace(".", "\\.")
-        val pattern = Pattern.compile("$escapedKeyword\\s*(\\d+(\\.\\d{1,2})?)", Pattern.CASE_INSENSITIVE)
+    private fun extractAmount(body: String): Double {
+        // Matches: "Rs. 500", "INR 500", "Rs 500.00", "Sent Rs.500"
+        val pattern = Pattern.compile("(?:Rs\\.?|INR)\\s*(\\d+(?:\\.\\d{1,2})?)", Pattern.CASE_INSENSITIVE)
         val matcher = pattern.matcher(body)
-
-        return if (matcher.find()) {
-            matcher.group(1)?.toDoubleOrNull() ?: 0.0
-        } else {
-            0.0
-        }
+        return if (matcher.find()) matcher.group(1)?.toDoubleOrNull() ?: 0.0 else 0.0
     }
 
-    private fun saveTransaction(context: Context, amount: Double, merchant: String, type: String) {
-        if (amount == 0.0) return
+    private fun extractMerchant(body: String): String {
+        val cleanBody = body.replace(Regex("(?i)(Info:)|(Txn)|(Ref)|(No\\.)"), "")
 
+        // 1. Keyword Search (Most reliable)
+        if (cleanBody.contains("zomato", true)) return "Zomato"
+        if (cleanBody.contains("swiggy", true)) return "Swiggy"
+        if (cleanBody.contains("uber", true)) return "Uber"
+        if (cleanBody.contains("ola", true)) return "Ola"
+        if (cleanBody.contains("blinkit", true)) return "Blinkit"
+        if (cleanBody.contains("amazon", true)) return "Amazon"
+        if (cleanBody.contains("netflix", true)) return "Netflix"
+        if (cleanBody.contains("spotify", true)) return "Spotify"
+        if (cleanBody.contains("recharge", true) || cleanBody.contains("jio", true) || cleanBody.contains("airtel", true)) return "Mobile Recharge"
+
+        // 2. Try to find "at [MERCHANT]" (e.g. "at STARBUCKS")
+        var pattern = Pattern.compile("at\\s+([A-Za-z0-9\\s_\\-]+?)(?:\\s|\\.|,|$)", Pattern.CASE_INSENSITIVE)
+        var matcher = pattern.matcher(cleanBody)
+        if (matcher.find()) {
+            return matcher.group(1)?.trim()?.take(20) ?: "Unknown"
+        }
+
+        // 3. Try to find "to [UPI ID / NAME]"
+        pattern = Pattern.compile("to\\s+([A-Za-z0-9@._\\s\\-]+?)(?:\\s+on|\\s|\\.|,|$)", Pattern.CASE_INSENSITIVE)
+        matcher = pattern.matcher(cleanBody)
+        if (matcher.find()) {
+            val raw = matcher.group(1)?.trim() ?: ""
+            // Cleanup UPI IDs (e.g., "starbucks@hdfc" -> "starbucks")
+            return if (raw.contains("@")) raw.split("@")[0] else raw.take(20)
+        }
+
+        return "Unknown"
+    }
+
+    // ================= SAVE TO DB =================
+
+    private fun saveTransaction(context: Context, amount: Double, merchant: String, date: Long, type: String) {
         CoroutineScope(Dispatchers.IO).launch {
-            val transaction = TransactionEntity(
-                merchant = merchant,
-                amount = amount,
-                timestamp = System.currentTimeMillis(),
-                type = type
-            )
-            AppDatabase.get(context).transactionDao().insert(transaction)
-            Log.d("SmsReceiver", "Saved $type: $amount")
+            try {
+                val transaction = TransactionEntity(
+                    merchant = merchant,
+                    amount = amount,
+                    timestamp = date,
+                    type = type
+                )
+                AppDatabase.get(context).transactionDao().insert(transaction)
+                Log.d("SmsReceiver", "Saved Transaction: ₹$amount at $merchant")
+
+                // Optional: Show a quick Toast so you know it worked
+                showToast(context, "Tracked: ₹$amount at $merchant")
+            } catch (e: Exception) {
+                Log.e("SmsReceiver", "Error saving transaction: ${e.message}")
+            }
         }
     }
 
     private fun showToast(context: Context, message: String) {
-        // Need to run Toast on Main Thread
         CoroutineScope(Dispatchers.Main).launch {
             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
         }

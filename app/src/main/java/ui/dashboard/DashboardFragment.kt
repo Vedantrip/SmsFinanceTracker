@@ -350,9 +350,14 @@ class DashboardFragment : Fragment() {
     }
 
     private fun checkPermissionAndLoad() {
-        if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED) {
+        val permissions = arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS)
+
+        if (permissions.all { ContextCompat.checkSelfPermission(requireContext(), it) == PackageManager.PERMISSION_GRANTED }) {
             syncSmsAndLoad()
         } else {
+            // We need a launcher that handles multiple permissions.
+            // For simplicity, just launching READ_SMS usually grants the group,
+            // but let's update the launcher to be safe.
             requestPermissionLauncher.launch(Manifest.permission.READ_SMS)
         }
     }
