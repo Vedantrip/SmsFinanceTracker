@@ -7,6 +7,8 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.util.Log
 import android.view.HapticFeedbackConstants
 import android.view.LayoutInflater
@@ -58,13 +60,19 @@ class DashboardFragment : Fragment() {
     private lateinit var btnPrevMonth: ImageButton
     private lateinit var btnNextMonth: ImageButton
 
+    // Search Views
+    private lateinit var btnSearch: ImageButton
+    private lateinit var searchLayout: View
+    private lateinit var etSearch: TextInputEditText
+
     // --- Config ---
     private var monthlyBudget = 5000.0
     private var selectedCalendar = Calendar.getInstance()
-    private var currentTransactions: MutableList<TransactionEntity> = mutableListOf()
+    private var currentMonthTransactions: MutableList<TransactionEntity> = mutableListOf()
 
+    // Neon / Luxury Palette
     private val CHART_COLORS = listOf(
-        Color.parseColor("#CCFF00"), // Neon Lime (Hero)
+        Color.parseColor("#CCFF00"), // Neon Lime
         Color.parseColor("#00E676"), // Bright Green
         Color.parseColor("#00B0FF"), // Electric Blue
         Color.parseColor("#651FFF"), // Deep Purple
@@ -94,6 +102,9 @@ class DashboardFragment : Fragment() {
         tvMonthYear = view.findViewById(R.id.tvMonthYear)
         btnPrevMonth = view.findViewById(R.id.btnPrevMonth)
         btnNextMonth = view.findViewById(R.id.btnNextMonth)
+        btnSearch = view.findViewById(R.id.btnSearch)
+        searchLayout = view.findViewById(R.id.searchLayout)
+        etSearch = view.findViewById(R.id.etSearch)
 
         rvTransactions.layoutManager = LinearLayoutManager(requireContext())
         rvTransactions.adapter = TransactionAdapter(emptyList())
@@ -102,11 +113,11 @@ class DashboardFragment : Fragment() {
         loadBudgetFromPrefs()
         setupPieChartStyle()
 
-        // --- THE NEW "MAGIC" LISTENER ---
-        // This watches the database 24/7. Any change anywhere updates the UI here.
+        // --- START LIVE DATA STREAM ---
         observeDatabase()
-        // -------------------------------
+        // -----------------------------
 
+        // Listeners
         fabAdd.setOnClickListener {
             view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
             showAddTransactionDialog()
@@ -117,6 +128,26 @@ class DashboardFragment : Fragment() {
             showSetBudgetDialog()
         }
 
+        // Search Toggle
+        btnSearch.setOnClickListener {
+            view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+            if (searchLayout.visibility == View.VISIBLE) {
+                searchLayout.visibility = View.GONE
+                etSearch.text?.clear()
+            } else {
+                searchLayout.visibility = View.VISIBLE
+                etSearch.requestFocus()
+            }
+        }
+
+        // Search Logic
+        etSearch.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) { filterTransactions(s.toString()) }
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+        })
+
+        // Month Navigation
         btnPrevMonth.setOnClickListener {
             selectedCalendar.add(Calendar.MONTH, -1)
             updateDateText()
@@ -134,12 +165,11 @@ class DashboardFragment : Fragment() {
         return view
     }
 
-    // ================= REACTIVE DATA LOADER =================
+    // ================= REAL-TIME DATA LOGIC =================
 
     private fun observeDatabase() {
         val dao = AppDatabase.get(requireContext()).transactionDao()
-
-        // We use 'collect' to listen to the Flow of data
+        // Collect Flow: Updates automatically whenever DB changes
         lifecycleScope.launch {
             dao.getAll().collect { allTransactions ->
                 processAndDisplayData(allTransactions)
@@ -151,89 +181,97 @@ class DashboardFragment : Fragment() {
         val targetMonth = selectedCalendar.get(Calendar.MONTH)
         val targetYear = selectedCalendar.get(Calendar.YEAR)
 
+        // 1. Filter by Date (Include BOTH Income & Expense)
         val filteredList = all.filter {
             val txnDate = Calendar.getInstance()
             txnDate.timeInMillis = it.timestamp
-
-            it.type == "DEBIT" &&
-                    txnDate.get(Calendar.MONTH) == targetMonth &&
+            txnDate.get(Calendar.MONTH) == targetMonth &&
                     txnDate.get(Calendar.YEAR) == targetYear
         }
 
-        var total = 0.0
+        // 2. Calculate Totals (Separate Logic)
+        var totalSpent = 0.0
         val categoryMap = mutableMapOf<String, Double>()
 
         filteredList.forEach {
-            total += it.amount
-            val cat = getCategory(it.merchant)
-            categoryMap[cat] = categoryMap.getOrDefault(cat, 0.0) + it.amount
+            // Only count DEBITS for the "Total Spent" and Chart
+            if (it.type == "DEBIT") {
+                totalSpent += it.amount
+                val cat = getCategory(it.merchant)
+                categoryMap[cat] = categoryMap.getOrDefault(cat, 0.0) + it.amount
+            }
         }
 
-        currentTransactions = filteredList.sortedByDescending { it.timestamp }.toMutableList()
-        val recentList = currentTransactions
+        // 3. Store full list for Search/Adapter
+        currentMonthTransactions = filteredList.sortedByDescending { it.timestamp }.toMutableList()
 
-        // Update UI on Main Thread is handled automatically by Flow collection scope,
-        // but let's ensure we are safe if coming from background IO
-        tvTotal.text = "₹${"%.2f".format(total)}"
+        // 4. Update UI
+        tvTotal.text = "₹${"%.2f".format(totalSpent)}"
 
-        if (recentList.isEmpty()) {
+        // Budget Logic (Based on Spent only)
+        val budget = if (monthlyBudget == 0.0) 1.0 else monthlyBudget
+        val percentage = (totalSpent / budget) * 100
+        progressBar.progress = percentage.toInt()
+
+        val remaining = budget - totalSpent
+        if (remaining > 0) {
+            tvBudgetLeft.text = "₹${"%.0f".format(remaining)} left"
+            tvSmartInsight.text = "Safe"
+            tvSmartInsight.setTextColor(Color.parseColor("#CCFF00")) // Neon Green
+        } else {
+            tvBudgetLeft.text = "Over by ₹${"%.0f".format(Math.abs(remaining))}"
+            tvSmartInsight.text = "Alert"
+            tvSmartInsight.setTextColor(Color.parseColor("#FF4081")) // Hot Pink
+        }
+
+        // Update Charts & Lists
+        updatePieChart(categoryMap)
+
+        // If search is active, don't reset list, let filter handle it
+        if (etSearch.text.isNullOrEmpty()) {
+            updateAdapter(currentMonthTransactions)
+        } else {
+            filterTransactions(etSearch.text.toString())
+        }
+    }
+
+    private fun filterTransactions(query: String) {
+        val lowerQuery = query.lowercase()
+        val filtered = currentMonthTransactions.filter {
+            it.merchant.lowercase().contains(lowerQuery) ||
+                    it.amount.toString().contains(lowerQuery)
+        }
+        updateAdapter(filtered)
+    }
+
+    private fun updateAdapter(list: List<TransactionEntity>) {
+        if (list.isEmpty()) {
             rvTransactions.visibility = View.GONE
             layoutEmptyState.visibility = View.VISIBLE
         } else {
             rvTransactions.visibility = View.VISIBLE
             layoutEmptyState.visibility = View.GONE
+            rvTransactions.adapter = TransactionAdapter(list)
         }
-
-        val budget = if (monthlyBudget == 0.0) 1.0 else monthlyBudget
-        val percentage = (total / budget) * 100
-        progressBar.progress = percentage.toInt()
-
-        val remaining = budget - total
-        if (remaining > 0) {
-            tvBudgetLeft.text = "₹${"%.0f".format(remaining)} left of ₹${"%.0f".format(budget)} budget\n(Tap to Edit)"
-        } else {
-            tvBudgetLeft.text = "Budget exceeded by ₹${"%.0f".format(Math.abs(remaining))}\n(Tap to Edit)"
-        }
-
-        if (percentage < 70) {
-            progressBar.setIndicatorColor(Color.WHITE)
-            tvSmartInsight.text = "You are saving well! 👏"
-        } else if (percentage < 90) {
-            progressBar.setIndicatorColor(Color.parseColor("#FFEB3B"))
-            tvSmartInsight.text = "Careful, you're nearing your limit."
-        } else {
-            progressBar.setIndicatorColor(Color.parseColor("#FF5252"))
-            tvSmartInsight.text = "You overspent this month! 🚨"
-        }
-
-        updatePieChart(categoryMap)
-        rvTransactions.adapter = TransactionAdapter(recentList)
     }
 
-    // ================= DATE HELPERS =================
-
-    private fun updateDateText() {
-        val sdf = SimpleDateFormat("MMMM yyyy", Locale.getDefault())
-        tvMonthYear.text = sdf.format(selectedCalendar.time)
-    }
-
-    // ================= OPERATIONS (SIMPLIFIED) =================
-    // Note: We REMOVED loadDashboardData() calls because observeDatabase() handles updates automatically!
+    // ================= OPERATIONS (ADD/DELETE) =================
 
     private fun saveManualTransaction(amount: Double, description: String) {
         lifecycleScope.launch(Dispatchers.IO) {
             val transaction = TransactionEntity(
-                merchant = description, amount = amount, timestamp = System.currentTimeMillis(), type = "DEBIT"
+                merchant = description,
+                amount = amount,
+                timestamp = System.currentTimeMillis(),
+                type = "DEBIT" // Manual entry default
             )
             AppDatabase.get(requireContext()).transactionDao().insert(transaction)
-            // No need to call loadDashboardData() - The Flow will trigger automatically!
         }
     }
 
     private fun deleteTransaction(transaction: TransactionEntity) {
         lifecycleScope.launch(Dispatchers.IO) {
             AppDatabase.get(requireContext()).transactionDao().delete(transaction)
-            // Auto-update
             withContext(Dispatchers.Main) {
                 Snackbar.make(rvTransactions, "Transaction deleted", Snackbar.LENGTH_LONG)
                     .setAction("UNDO") { undoDelete(transaction) }
@@ -249,28 +287,140 @@ class DashboardFragment : Fragment() {
         }
     }
 
-    private fun saveBudgetToPrefs(newBudget: Double) {
-        val prefs = requireContext().getSharedPreferences("FinancePrefs", Context.MODE_PRIVATE)
-        prefs.edit().putFloat("USER_BUDGET", newBudget.toFloat()).apply()
-        monthlyBudget = newBudget
-        // For budget, we force a re-process because DB didn't change, only config did
-        observeDatabase()
+    // ================= SMS PARSING (SMART) =================
+
+    private fun readInboxAndSaveToDb() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val dao = AppDatabase.get(requireContext()).transactionDao()
+            try {
+                val cursor = requireContext().contentResolver.query(
+                    android.net.Uri.parse("content://sms/inbox"), null, null, null, null
+                )
+                cursor?.use {
+                    val bodyIndex = it.getColumnIndex("body")
+                    val dateIndex = it.getColumnIndex("date")
+
+                    while (it.moveToNext()) {
+                        val body = it.getString(bodyIndex) ?: ""
+                        val date = it.getLong(dateIndex)
+
+                        // 1. Check for INCOME
+                        if (body.contains("credited", true) || body.contains("received", true) || body.contains("deposited", true)) {
+                            val amount = extractAmount(body)
+                            if (amount > 0) {
+                                // Simple check to avoid duplicates (naive)
+                                val transaction = TransactionEntity(merchant = "Income", amount = amount, timestamp = date, type = "CREDIT")
+                                dao.insert(transaction)
+                            }
+                        }
+                        // 2. Check for EXPENSE
+                        else if (body.contains("Sent Rs.", true) || body.contains("debited", true) || body.contains("spent", true) || body.contains("paid", true)) {
+                            val amount = extractAmount(body)
+                            if (amount > 0) {
+                                val merchant = extractMerchant(body)
+                                val transaction = TransactionEntity(merchant = merchant, amount = amount, timestamp = date, type = "DEBIT")
+                                dao.insert(transaction)
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) { Log.e("Dashboard", "Error reading SMS: ${e.message}") }
+        }
     }
 
-    // ... (Keep the rest: Swipe handler, Popups, Permissions, SMS Reading helpers, etc.) ...
-    // COPY THE REST FROM BELOW TO COMPLETE THE FILE
+    private fun extractAmount(body: String): Double {
+        val pattern = Pattern.compile("(?:Rs\\.?|INR)\\s*(\\d+(?:\\.\\d{1,2})?)", Pattern.CASE_INSENSITIVE)
+        val matcher = pattern.matcher(body)
+        return if (matcher.find()) matcher.group(1)?.toDoubleOrNull() ?: 0.0 else 0.0
+    }
 
-    // ================= REST OF THE CODE (COPY PASTE THIS) =================
+    private fun extractMerchant(body: String): String {
+        val cleanBody = body.replace(Regex("(?i)(Info:)|(Txn)|(Ref)|(No\\.)"), "")
+        if (cleanBody.contains("zomato", true)) return "Zomato"
+        if (cleanBody.contains("swiggy", true)) return "Swiggy"
+        if (cleanBody.contains("uber", true)) return "Uber"
+        if (cleanBody.contains("ola", true)) return "Ola"
+        if (cleanBody.contains("blinkit", true)) return "Blinkit"
+        if (cleanBody.contains("amazon", true)) return "Amazon"
+        if (cleanBody.contains("netflix", true)) return "Netflix"
+        if (cleanBody.contains("spotify", true)) return "Spotify"
+        if (cleanBody.contains("recharge", true) || cleanBody.contains("jio", true) || cleanBody.contains("airtel", true)) return "Mobile Recharge"
+
+        var pattern = Pattern.compile("at\\s+([A-Za-z0-9\\s_\\-]+?)(?:\\s|\\.|,|$)", Pattern.CASE_INSENSITIVE)
+        var matcher = pattern.matcher(cleanBody)
+        if (matcher.find()) return matcher.group(1)?.trim()?.take(20) ?: "Unknown"
+
+        pattern = Pattern.compile("to\\s+([A-Za-z0-9@._\\s\\-]+?)(?:\\s+on|\\s|\\.|,|$)", Pattern.CASE_INSENSITIVE)
+        matcher = pattern.matcher(cleanBody)
+        if (matcher.find()) {
+            val raw = matcher.group(1)?.trim() ?: ""
+            return if (raw.contains("@")) raw.split("@")[0] else raw.take(20)
+        }
+        return "Unknown"
+    }
+
+    private fun getCategory(merchant: String): String {
+        val name = merchant.lowercase()
+        return when {
+            name.contains("zomato") || name.contains("swiggy") || name.contains("burger") || name.contains("pizza") || name.contains("chai") -> "Food"
+            name.contains("uber") || name.contains("ola") || name.contains("rapido") || name.contains("fuel") || name.contains("petrol") -> "Travel"
+            name.contains("recharge") || name.contains("jio") || name.contains("bill") || name.contains("electricity") || name.contains("paytm") -> "Bills"
+            name.contains("amazon") || name.contains("flipkart") || name.contains("myntra") || name.contains("shop") -> "Shopping"
+            name.contains("netflix") || name.contains("spotify") || name.contains("movie") -> "Entertainment"
+            else -> "Other"
+        }
+    }
+
+    // ================= VISUALS =================
+
+    private fun updateDateText() {
+        val sdf = SimpleDateFormat("MMM yyyy", Locale.getDefault())
+        tvMonthYear.text = sdf.format(selectedCalendar.time).uppercase()
+    }
+
+    private fun setupPieChartStyle() {
+        pieChart.apply {
+            isDrawHoleEnabled = true
+            setHoleColor(Color.TRANSPARENT)
+            setTransparentCircleColor(Color.BLACK)
+            setTransparentCircleAlpha(0)
+            holeRadius = 70f
+            transparentCircleRadius = 70f
+            description.isEnabled = false
+            legend.isEnabled = false
+            setDrawEntryLabels(false)
+            setUsePercentValues(true)
+            setTouchEnabled(true)
+        }
+    }
+
+    private fun updatePieChart(categoryMap: Map<String, Double>) {
+        if (categoryMap.isEmpty()) {
+            pieChart.clear()
+            return
+        }
+        val entries = categoryMap.map { PieEntry(it.value.toFloat(), it.key) }
+        val dataSet = PieDataSet(entries, "")
+        dataSet.colors = CHART_COLORS
+        dataSet.sliceSpace = 3f
+        dataSet.selectionShift = 5f
+        val data = PieData(dataSet)
+        data.setValueTextSize(0f)
+        pieChart.data = data
+        pieChart.animateY(1400, Easing.EaseInOutQuad)
+        pieChart.invalidate()
+    }
 
     private fun setupSwipeToDelete() {
         val swipeHandler = object : ItemTouchHelper.SimpleCallback(0, ItemTouchHelper.LEFT) {
             override fun onChildDraw(c: Canvas, recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder, dX: Float, dY: Float, actionState: Int, isCurrentlyActive: Boolean) {
                 val itemView = viewHolder.itemView
-                val background = ColorDrawable(Color.parseColor("#FF5252"))
+                val background = ColorDrawable(Color.parseColor("#B71C1C")) // Red
                 val icon = ContextCompat.getDrawable(requireContext(), android.R.drawable.ic_menu_delete)
                 background.setBounds(itemView.right + dX.toInt(), itemView.top, itemView.right, itemView.bottom)
                 background.draw(c)
                 icon?.let {
+                    it.setTint(Color.WHITE)
                     val iconMargin = (itemView.height - it.intrinsicHeight) / 2
                     val iconTop = itemView.top + (itemView.height - it.intrinsicHeight) / 2
                     val iconBottom = iconTop + it.intrinsicHeight
@@ -284,17 +434,28 @@ class DashboardFragment : Fragment() {
             override fun onMove(r: RecyclerView, v: RecyclerView.ViewHolder, t: RecyclerView.ViewHolder) = false
             override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
                 val position = viewHolder.adapterPosition
-                val transactionToDelete = currentTransactions[position]
-                view?.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
-                deleteTransaction(transactionToDelete)
+                if (position < currentMonthTransactions.size) {
+                    val transactionToDelete = currentMonthTransactions[position]
+                    view?.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                    deleteTransaction(transactionToDelete)
+                }
             }
         }
         ItemTouchHelper(swipeHandler).attachToRecyclerView(rvTransactions)
     }
 
+    // ================= DIALOGS & PREFS =================
+
     private fun loadBudgetFromPrefs() {
         val prefs = requireContext().getSharedPreferences("FinancePrefs", Context.MODE_PRIVATE)
         monthlyBudget = prefs.getFloat("USER_BUDGET", 5000f).toDouble()
+    }
+
+    private fun saveBudgetToPrefs(newBudget: Double) {
+        val prefs = requireContext().getSharedPreferences("FinancePrefs", Context.MODE_PRIVATE)
+        prefs.edit().putFloat("USER_BUDGET", newBudget.toFloat()).apply()
+        monthlyBudget = newBudget
+        observeDatabase()
     }
 
     private fun showAddTransactionDialog() {
@@ -340,125 +501,5 @@ class DashboardFragment : Fragment() {
         } else {
             requestPermissionLauncher.launch(Manifest.permission.READ_SMS)
         }
-    }
-
-    private fun readInboxAndSaveToDb() {
-        // We only scan if DB is empty to avoid duplicates on startup
-        lifecycleScope.launch(Dispatchers.IO) {
-            val dao = AppDatabase.get(requireContext()).transactionDao()
-            // Note: Since getAll returns Flow, we can't check .isNotEmpty() easily here synchronously.
-            // A simple hack is just to run the scan. Our logic handles duplicates naturally
-            // OR you can add a simple Count query to DAO.
-            // For now, let's just run the scan logic safely.
-
-            try {
-                val cursor = requireContext().contentResolver.query(
-                    android.net.Uri.parse("content://sms/inbox"), null, null, null, null
-                )
-                cursor?.use {
-                    val bodyIndex = it.getColumnIndex("body")
-                    val dateIndex = it.getColumnIndex("date")
-                    while (it.moveToNext()) {
-                        val body = it.getString(bodyIndex) ?: ""
-                        val date = it.getLong(dateIndex)
-                        if (body.contains("Sent Rs.", true) || body.contains("debited", true) || body.contains("spent", true) || body.contains("paid", true)) {
-                            val amount = extractAmount(body)
-                            if (amount > 0) {
-                                val merchant = extractMerchant(body)
-                                // Only insert if not exists (Ideally DAO should handle conflict)
-                                // For simplicity in this tutorial, we insert.
-                                // (To prevent duplicates, use @Insert(onConflict = OnConflictStrategy.IGNORE) in DAO)
-                                val transaction = TransactionEntity(merchant = merchant, amount = amount, timestamp = date, type = "DEBIT")
-                                dao.insert(transaction)
-                            }
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("Dashboard", "Error reading SMS: ${e.message}")
-            }
-        }
-    }
-
-    private fun extractAmount(body: String): Double {
-        val pattern = Pattern.compile("(?:Rs\\.?|INR)\\s*(\\d+(?:\\.\\d{1,2})?)", Pattern.CASE_INSENSITIVE)
-        val matcher = pattern.matcher(body)
-        return if (matcher.find()) matcher.group(1)?.toDoubleOrNull() ?: 0.0 else 0.0
-    }
-
-    private fun extractMerchant(body: String): String {
-        val cleanBody = body.replace(Regex("(?i)(Info:)|(Txn)|(Ref)|(No\\.)"), "")
-        if (cleanBody.contains("zomato", true)) return "Zomato"
-        if (cleanBody.contains("swiggy", true)) return "Swiggy"
-        if (cleanBody.contains("uber", true)) return "Uber"
-        if (cleanBody.contains("ola", true)) return "Ola"
-        if (cleanBody.contains("blinkit", true)) return "Blinkit"
-        if (cleanBody.contains("amazon", true)) return "Amazon"
-        if (cleanBody.contains("netflix", true)) return "Netflix"
-        if (cleanBody.contains("spotify", true)) return "Spotify"
-        if (cleanBody.contains("recharge", true) || cleanBody.contains("jio", true) || cleanBody.contains("airtel", true)) return "Mobile Recharge"
-        var pattern = Pattern.compile("at\\s+([A-Za-z0-9\\s_\\-]+?)(?:\\s|\\.|,|$)", Pattern.CASE_INSENSITIVE)
-        var matcher = pattern.matcher(cleanBody)
-        if (matcher.find()) return matcher.group(1)?.trim()?.take(20) ?: "Unknown"
-        pattern = Pattern.compile("to\\s+([A-Za-z0-9@._\\s\\-]+?)(?:\\s+on|\\s|\\.|,|$)", Pattern.CASE_INSENSITIVE)
-        matcher = pattern.matcher(cleanBody)
-        if (matcher.find()) {
-            val raw = matcher.group(1)?.trim() ?: ""
-            return if (raw.contains("@")) raw.split("@")[0] else raw.take(20)
-        }
-        return "Unknown"
-    }
-
-    private fun getCategory(merchant: String): String {
-        val name = merchant.lowercase()
-        return when {
-            name.contains("zomato") || name.contains("swiggy") || name.contains("burger") || name.contains("pizza") || name.contains("chai") -> "Food"
-            name.contains("uber") || name.contains("ola") || name.contains("rapido") || name.contains("fuel") || name.contains("petrol") -> "Travel"
-            name.contains("recharge") || name.contains("jio") || name.contains("bill") || name.contains("electricity") || name.contains("paytm") -> "Bills"
-            name.contains("amazon") || name.contains("flipkart") || name.contains("myntra") || name.contains("shop") -> "Shopping"
-            name.contains("netflix") || name.contains("spotify") || name.contains("movie") -> "Entertainment"
-            else -> "Other"
-        }
-    }
-
-    private fun setupPieChartStyle() {
-        pieChart.apply {
-            isDrawHoleEnabled = true
-            setHoleColor(Color.TRANSPARENT) // Hole matches background
-            setTransparentCircleColor(Color.BLACK)
-            setTransparentCircleAlpha(0)
-
-            holeRadius = 70f // Thinner ring looks more elegant
-            transparentCircleRadius = 70f
-
-            description.isEnabled = false
-            legend.isEnabled = false
-            setDrawEntryLabels(false)
-            setUsePercentValues(true)
-
-            // NO TEXT on chart for cleaner look, or use white
-            setEntryLabelColor(Color.WHITE)
-        }
-    }
-
-    private fun updatePieChart(categoryMap: Map<String, Double>) {
-        if (categoryMap.isEmpty()) {
-            pieChart.clear()
-            pieChart.centerText = "No Data"
-            return
-        }
-        val entries = categoryMap.map { PieEntry(it.value.toFloat(), it.key) }
-        val dataSet = PieDataSet(entries, "")
-        dataSet.colors = CHART_COLORS
-        dataSet.sliceSpace = 3f
-        dataSet.selectionShift = 5f
-        val data = PieData(dataSet)
-        data.setValueTextSize(12f)
-        data.setValueTextColor(Color.WHITE)
-        pieChart.data = data
-        pieChart.centerText = "Spending"
-        pieChart.setCenterTextSize(16f)
-        pieChart.animateY(1400, Easing.EaseInOutQuad)
-        pieChart.invalidate()
     }
 }

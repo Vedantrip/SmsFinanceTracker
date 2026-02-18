@@ -33,22 +33,33 @@ class TransactionAdapter(private val transactions: List<TransactionEntity>) :
     override fun onBindViewHolder(holder: TransactionViewHolder, position: Int) {
         val transaction = transactions[position]
 
-        // 1. Set Merchant Name
+        // 1. Merchant Name
         holder.tvMerchant.text = transaction.merchant
 
-        // 2. Set Amount (Red color)
-        holder.tvAmount.text = "₹${"%.2f".format(transaction.amount)}"
-        holder.tvAmount.setTextColor(Color.parseColor("#D32F2F")) // Red
-
-        // 3. Set Smart Date ("Today", "Yesterday", etc.)
+        // 2. Date
         holder.tvDate.text = getSmartDate(transaction.timestamp)
 
-        // 4. Set Icon & Color based on Category
-        val (iconRes, colorHex) = getCategoryStyle(transaction.merchant)
+        // 3. COLOR & SIGN LOGIC
+        if (transaction.type == "CREDIT") {
+            // INCOME: Green Color, Plus Sign
+            holder.tvAmount.text = "+ ₹${"%.2f".format(transaction.amount)}"
+            holder.tvAmount.setTextColor(android.graphics.Color.parseColor("#00E676")) // Neon Green
 
-        // Replace the color tint logic with this:
-        holder.ivIcon.setImageResource(iconRes)
-        holder.ivIcon.setColorFilter(Color.WHITE) // Force icon to be White
+            // Optional: Set specific icon for Income
+            holder.ivIcon.setImageResource(R.drawable.ic_bill) // Or a wallet icon
+        } else {
+            // EXPENSE: White/Red Color, Minus Sign
+            holder.tvAmount.text = "- ₹${"%.2f".format(transaction.amount)}"
+            holder.tvAmount.setTextColor(android.graphics.Color.parseColor("#FFFFFF")) // White for Dark Mode
+            // OR use Red if you prefer: "#FF5252"
+
+            // Set Category Icon
+            val (iconRes, _) = getCategoryStyle(transaction.merchant)
+            holder.ivIcon.setImageResource(iconRes)
+        }
+
+        // Keep icons white for clean dark mode look
+        holder.ivIcon.setColorFilter(android.graphics.Color.WHITE)
     }
 
     override fun getItemCount() = transactions.size
