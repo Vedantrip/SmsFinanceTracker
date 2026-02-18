@@ -46,8 +46,9 @@ class TransactionAdapter(private val transactions: List<TransactionEntity>) :
         // 4. Set Icon & Color based on Category
         val (iconRes, colorHex) = getCategoryStyle(transaction.merchant)
 
+        // Replace the color tint logic with this:
         holder.ivIcon.setImageResource(iconRes)
-        holder.ivIcon.setColorFilter(Color.parseColor(colorHex))
+        holder.ivIcon.setColorFilter(Color.WHITE) // Force icon to be White
     }
 
     override fun getItemCount() = transactions.size

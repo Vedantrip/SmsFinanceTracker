@@ -424,15 +424,20 @@ class DashboardFragment : Fragment() {
     private fun setupPieChartStyle() {
         pieChart.apply {
             isDrawHoleEnabled = true
-            setHoleColor(Color.TRANSPARENT)
-            setTransparentCircleColor(Color.WHITE)
-            setTransparentCircleAlpha(110)
-            holeRadius = 58f
-            transparentCircleRadius = 61f
+            setHoleColor(Color.TRANSPARENT) // Hole matches background
+            setTransparentCircleColor(Color.BLACK)
+            setTransparentCircleAlpha(0)
+
+            holeRadius = 70f // Thinner ring looks more elegant
+            transparentCircleRadius = 70f
+
             description.isEnabled = false
             legend.isEnabled = false
             setDrawEntryLabels(false)
             setUsePercentValues(true)
+
+            // NO TEXT on chart for cleaner look, or use white
+            setEntryLabelColor(Color.WHITE)
         }
     }
 
