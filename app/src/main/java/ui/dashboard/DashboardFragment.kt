@@ -64,9 +64,12 @@ class DashboardFragment : Fragment() {
     private var currentTransactions: MutableList<TransactionEntity> = mutableListOf()
 
     private val CHART_COLORS = listOf(
-        Color.parseColor("#FF6F61"), Color.parseColor("#6B5B95"),
-        Color.parseColor("#88B04B"), Color.parseColor("#F7CAC9"),
-        Color.parseColor("#92A8D1"), Color.parseColor("#FFB347")
+        Color.parseColor("#CCFF00"), // Neon Lime (Hero)
+        Color.parseColor("#00E676"), // Bright Green
+        Color.parseColor("#00B0FF"), // Electric Blue
+        Color.parseColor("#651FFF"), // Deep Purple
+        Color.parseColor("#FF4081"), // Hot Pink
+        Color.parseColor("#E0E0E0")  // Light Grey
     )
 
     private val requestPermissionLauncher = registerForActivityResult(
