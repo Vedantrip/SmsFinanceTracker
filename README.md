@@ -76,6 +76,14 @@ TransactionDao → DB operations
 
 ---
 
+## Previews :
+<img width="398" height="288" alt="image" src="https://github.com/user-attachments/assets/18d4125d-4faa-460b-b4fc-c24ed8c5412c" />
+<img width="389" height="596" alt="image" src="https://github.com/user-attachments/assets/9c5aaeab-06c4-4598-b644-2831a289fc8d" />
+<img width="380" height="789" alt="image" src="https://github.com/user-attachments/assets/4321f839-ae82-49f2-95ea-562cf1c34f5e" />
+<img width="392" height="710" alt="image" src="https://github.com/user-attachments/assets/a96ce286-5ec7-4bd3-8911-34f64f92704a" />
+
+
+
 ## 🔐 Permissions Used
 
 ```xml
