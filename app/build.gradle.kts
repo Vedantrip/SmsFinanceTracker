@@ -48,6 +48,9 @@ dependencies {
     implementation(libs.androidx.activity)
     implementation(libs.androidx.constraintlayout)
 
+    // Networking
+    implementation(libs.okhttp)
+
     // ✅ ROOM DATABASE (CORRECT)
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")

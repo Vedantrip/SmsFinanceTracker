@@ -5,242 +5,257 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#121212"
-    android:animateLayoutChanges="true"> <androidx.core.widget.NestedScrollView
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:paddingHorizontal="20dp"
-    android:paddingTop="24dp">
+    android:animateLayoutChanges="true">
 
-    <LinearLayout
+    <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:animateLayoutChanges="true">
+        android:layout_height="match_parent"
+        android:paddingHorizontal="20dp"
+        android:paddingTop="24dp">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:layout_marginBottom="24dp">
-
-            <TextView
-                android:id="@+id/tvMonthYear"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="FEB 2026"
-                android:textSize="14sp"
-                android:letterSpacing="0.1"
-                android:textStyle="bold"
-                android:textColor="#80FFFFFF"/>
-
-            <ImageButton
-                android:id="@+id/btnSearch"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:src="@android:drawable/ic_menu_search"
-                app:tint="#FFFFFF"
-                android:background="@drawable/circle_background_dark"
-                android:layout_marginEnd="12dp"/>
+            android:orientation="vertical"
+            android:animateLayoutChanges="true">
 
             <LinearLayout
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:background="@drawable/bg_pill_dark">
+                android:gravity="center_vertical"
+                android:layout_marginBottom="24dp">
+
+                <TextView
+                    android:id="@+id/tvMonthYear"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="FEB 2026"
+                    android:textSize="14sp"
+                    android:letterSpacing="0.1"
+                    android:textStyle="bold"
+                    android:textColor="#80FFFFFF"/>
 
                 <ImageButton
-                    android:id="@+id/btnPrevMonth"
+                    android:id="@+id/btnAiAgent"
                     android:layout_width="40dp"
                     android:layout_height="40dp"
-                    android:src="@android:drawable/ic_media_previous"
-                    app:tint="#FFFFFF"
-                    android:background="?attr/selectableItemBackgroundBorderless"/>
-
-                <View
-                    android:layout_width="1dp"
-                    android:layout_height="16dp"
-                    android:layout_gravity="center"
-                    android:background="#33FFFFFF"/>
+                    android:src="@android:drawable/ic_dialog_dialer"
+                    app:tint="#121212"
+                    android:backgroundTint="#CCFF00"
+                    android:background="@drawable/circle_background_dark"
+                    android:layout_marginEnd="12dp"
+                    android:contentDescription="Ask District AI"/>
 
                 <ImageButton
-                    android:id="@+id/btnNextMonth"
+                    android:id="@+id/btnSearch"
                     android:layout_width="40dp"
                     android:layout_height="40dp"
-                    android:src="@android:drawable/ic_media_next"
+                    android:src="@android:drawable/ic_menu_search"
                     app:tint="#FFFFFF"
-                    android:background="?attr/selectableItemBackgroundBorderless"/>
+                    android:background="@drawable/circle_background_dark"
+                    android:layout_marginEnd="12dp"
+                    android:contentDescription="Search Transactions"/>
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:background="@drawable/bg_pill_dark">
+
+                    <ImageButton
+                        android:id="@+id/btnPrevMonth"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:src="@android:drawable/ic_media_previous"
+                        app:tint="#FFFFFF"
+                        android:background="?attr/selectableItemBackgroundBorderless"/>
+
+                    <View
+                        android:layout_width="1dp"
+                        android:layout_height="16dp"
+                        android:layout_gravity="center"
+                        android:background="#33FFFFFF"/>
+
+                    <ImageButton
+                        android:id="@+id/btnNextMonth"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:src="@android:drawable/ic_media_next"
+                        app:tint="#FFFFFF"
+                        android:background="?attr/selectableItemBackgroundBorderless"/>
+                </LinearLayout>
             </LinearLayout>
-        </LinearLayout>
 
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/searchLayout"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:visibility="gone"
-            android:layout_marginBottom="16dp"
-            app:hintEnabled="false"
-            app:boxBackgroundMode="none">
-
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/etSearch"
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/searchLayout"
                 android:layout_width="match_parent"
-                android:layout_height="50dp"
-                android:background="@drawable/bg_pill_dark"
-                android:hint="Search transactions..."
+                android:layout_height="wrap_content"
+                android:visibility="gone"
+                android:layout_marginBottom="16dp"
+                app:hintEnabled="false"
+                app:boxBackgroundMode="none">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/etSearch"
+                    android:layout_width="match_parent"
+                    android:layout_height="50dp"
+                    android:background="@drawable/bg_pill_dark"
+                    android:hint="Search transactions..."
+                    android:textColor="#FFFFFF"
+                    android:textColorHint="#80FFFFFF"
+                    android:paddingHorizontal="20dp"
+                    android:singleLine="true"
+                    android:imeOptions="actionDone"
+                    android:drawableStart="@android:drawable/ic_menu_search"
+                    android:drawableTint="#80FFFFFF"
+                    android:drawablePadding="12dp"/>
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Spending"
+                android:textSize="32sp"
+                android:fontFamily="sans-serif-medium"
                 android:textColor="#FFFFFF"
-                android:textColorHint="#80FFFFFF"
-                android:paddingHorizontal="20dp"
-                android:singleLine="true"
-                android:imeOptions="actionDone"
-                android:drawableStart="@android:drawable/ic_menu_search"
-                android:drawableTint="#80FFFFFF"
-                android:drawablePadding="12dp"/>
-        </com.google.android.material.textfield.TextInputLayout>
+                android:layout_marginBottom="24dp"/>
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Spending"
-            android:textSize="32sp"
-            android:fontFamily="sans-serif-medium"
-            android:textColor="#FFFFFF"
-            android:layout_marginBottom="24dp"/>
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardCornerRadius="24dp"
+                app:cardElevation="0dp"
+                app:cardBackgroundColor="#1E1E1E"
+                app:strokeColor="#33FFFFFF"
+                app:strokeWidth="1dp">
 
-        <com.google.android.material.card.MaterialCardView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            app:cardCornerRadius="24dp"
-            app:cardElevation="0dp"
-            app:cardBackgroundColor="#1E1E1E"
-            app:strokeColor="#33FFFFFF"
-            app:strokeWidth="1dp">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="28dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Total Spent"
+                        android:textColor="#99FFFFFF"
+                        android:textSize="14sp"
+                        android:letterSpacing="0.05"/>
+
+                    <TextView
+                        android:id="@+id/tvTotal"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="₹0.00"
+                        android:textSize="40sp"
+                        android:fontFamily="sans-serif-light"
+                        android:textStyle="bold"
+                        android:textColor="#FFFFFF"
+                        android:layout_marginTop="8dp"/>
+
+                    <com.google.android.material.progressindicator.LinearProgressIndicator
+                        android:id="@+id/progressBar"
+                        android:layout_width="match_parent"
+                        android:layout_height="6dp"
+                        android:layout_marginTop="24dp"
+                        app:trackColor="#33FFFFFF"
+                        app:indicatorColor="#CCFF00"
+                        app:trackCornerRadius="3dp"/>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginTop="12dp">
+
+                        <TextView
+                            android:id="@+id/tvBudgetLeft"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Calculating..."
+                            android:textColor="#CCFFFFFF"
+                            android:textSize="12sp"/>
+
+                        <TextView
+                            android:id="@+id/tvSmartInsight"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Safe"
+                            android:textColor="#CCFF00"
+                            android:textStyle="bold"
+                            android:textSize="12sp"/>
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="28dp">
+                android:layout_marginTop="32dp">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Total Spent"
-                    android:textColor="#99FFFFFF"
-                    android:textSize="14sp"
-                    android:letterSpacing="0.05"/>
-
-                <TextView
-                    android:id="@+id/tvTotal"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="₹0.00"
-                    android:textSize="40sp"
-                    android:fontFamily="sans-serif-light"
-                    android:textStyle="bold"
+                    android:text="Breakdown"
                     android:textColor="#FFFFFF"
-                    android:layout_marginTop="8dp"/>
+                    android:textSize="18sp"
+                    android:textStyle="bold"/>
 
-                <com.google.android.material.progressindicator.LinearProgressIndicator
-                    android:id="@+id/progressBar"
+                <com.github.mikephil.charting.charts.PieChart
+                    android:id="@+id/pieChart"
                     android:layout_width="match_parent"
-                    android:layout_height="6dp"
-                    android:layout_marginTop="24dp"
-                    app:trackColor="#33FFFFFF"
-                    app:indicatorColor="#CCFF00"
-                    app:trackCornerRadius="3dp"/>
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:layout_marginTop="12dp">
-
-                    <TextView
-                        android:id="@+id/tvBudgetLeft"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="Calculating..."
-                        android:textColor="#CCFFFFFF"
-                        android:textSize="12sp"/>
-
-                    <TextView
-                        android:id="@+id/tvSmartInsight"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Safe"
-                        android:textColor="#CCFF00"
-                        android:textStyle="bold"
-                        android:textSize="12sp"/>
-                </LinearLayout>
+                    android:layout_height="250dp"
+                    android:layout_marginTop="16dp"/>
             </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginTop="32dp">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Breakdown"
+                android:text="Recent"
                 android:textColor="#FFFFFF"
                 android:textSize="18sp"
-                android:textStyle="bold"/>
+                android:textStyle="bold"
+                android:layout_marginTop="32dp"
+                android:layout_marginBottom="16dp"/>
 
-            <com.github.mikephil.charting.charts.PieChart
-                android:id="@+id/pieChart"
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rvTransactions"
                 android:layout_width="match_parent"
-                android:layout_height="250dp"
-                android:layout_marginTop="16dp"/>
-        </LinearLayout>
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Recent"
-            android:textColor="#FFFFFF"
-            android:textSize="18sp"
-            android:textStyle="bold"
-            android:layout_marginTop="32dp"
-            android:layout_marginBottom="16dp"/>
-
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/rvTransactions"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:nestedScrollingEnabled="false"/>
-
-        <LinearLayout
-            android:id="@+id/layoutEmptyState"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:gravity="center"
-            android:visibility="gone"
-            android:padding="32dp">
-
-            <ImageView
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:src="@drawable/ic_money"
-                app:tint="#333333"/>
-
-            <TextView
-                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="No spending yet"
-                android:textColor="#66FFFFFF"
-                android:layout_marginTop="12dp"/>
-        </LinearLayout>
+                android:nestedScrollingEnabled="false"/>
 
-        <View android:layout_width="match_parent" android:layout_height="100dp"/>
-    </LinearLayout>
-</androidx.core.widget.NestedScrollView>
+            <LinearLayout
+                android:id="@+id/layoutEmptyState"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:visibility="gone"
+                android:padding="32dp">
+
+                <ImageView
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:src="@drawable/ic_money"
+                    app:tint="#333333"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="No spending yet"
+                    android:textColor="#66FFFFFF"
+                    android:layout_marginTop="12dp"/>
+            </LinearLayout>
+
+            <View android:layout_width="match_parent" android:layout_height="100dp"/>
+
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
 
     <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
         android:id="@+id/fabAdd"

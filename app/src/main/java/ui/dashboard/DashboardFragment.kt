@@ -40,6 +40,12 @@ import com.google.android.material.textfield.TextInputEditText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -60,17 +66,22 @@ class DashboardFragment : Fragment() {
     private lateinit var btnPrevMonth: ImageButton
     private lateinit var btnNextMonth: ImageButton
 
-    // Search Views
+    // Search & AI Views
     private lateinit var btnSearch: ImageButton
     private lateinit var searchLayout: View
     private lateinit var etSearch: TextInputEditText
+    private lateinit var btnAiAgent: ImageButton
 
     // --- Config ---
     private var monthlyBudget = 5000.0
     private var selectedCalendar = Calendar.getInstance()
     private var currentMonthTransactions: MutableList<TransactionEntity> = mutableListOf()
 
-    // Neon / Luxury Palette
+    // --- GEMINI AI AGENT CONFIG ---
+    private val GEMINI_API_KEY = "AIzaSyDU-B-LoFKa8WfK_1jXj7cmRBR86Z65G_c"
+    private val okHttpClient = OkHttpClient()
+
+    // Neon Palette
     private val CHART_COLORS = listOf(
         Color.parseColor("#CCFF00"), // Neon Lime
         Color.parseColor("#00E676"), // Bright Green
@@ -90,7 +101,6 @@ class DashboardFragment : Fragment() {
     ): View {
         val view = inflater.inflate(R.layout.fragment_dashboard, container, false)
 
-        // Initialize Views
         tvTotal = view.findViewById(R.id.tvTotal)
         tvSmartInsight = view.findViewById(R.id.tvSmartInsight)
         pieChart = view.findViewById(R.id.pieChart)
@@ -99,12 +109,17 @@ class DashboardFragment : Fragment() {
         progressBar = view.findViewById(R.id.progressBar)
         tvBudgetLeft = view.findViewById(R.id.tvBudgetLeft)
         layoutEmptyState = view.findViewById(R.id.layoutEmptyState)
-        tvMonthYear = view.findViewById(R.id.tvMonthYear)
-        btnPrevMonth = view.findViewById(R.id.btnPrevMonth)
-        btnNextMonth = view.findViewById(R.id.btnNextMonth)
-        btnSearch = view.findViewById(R.id.btnSearch)
-        searchLayout = view.findViewById(R.id.searchLayout)
-        etSearch = view.findViewById(R.id.etSearch)
+
+        // Use safe casting in case the Light Theme layout doesn't have these
+        tvMonthYear = view.findViewById(R.id.tvMonthYear) ?: TextView(requireContext())
+        btnPrevMonth = view.findViewById(R.id.btnPrevMonth) ?: ImageButton(requireContext())
+        btnNextMonth = view.findViewById(R.id.btnNextMonth) ?: ImageButton(requireContext())
+        btnSearch = view.findViewById(R.id.btnSearch) ?: ImageButton(requireContext())
+        searchLayout = view.findViewById(R.id.searchLayout) ?: View(requireContext())
+        etSearch = view.findViewById(R.id.etSearch) ?: TextInputEditText(requireContext())
+
+        // This is the important AI button!
+        btnAiAgent = view.findViewById(R.id.btnAiAgent)
 
         rvTransactions.layoutManager = LinearLayoutManager(requireContext())
         rvTransactions.adapter = TransactionAdapter(emptyList())
@@ -113,11 +128,8 @@ class DashboardFragment : Fragment() {
         loadBudgetFromPrefs()
         setupPieChartStyle()
 
-        // --- START LIVE DATA STREAM ---
         observeDatabase()
-        // -----------------------------
 
-        // Listeners
         fabAdd.setOnClickListener {
             view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
             showAddTransactionDialog()
@@ -128,7 +140,11 @@ class DashboardFragment : Fragment() {
             showSetBudgetDialog()
         }
 
-        // Search Toggle
+        btnAiAgent.setOnClickListener {
+            view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+            showAiAgentDialog()
+        }
+
         btnSearch.setOnClickListener {
             view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
             if (searchLayout.visibility == View.VISIBLE) {
@@ -140,23 +156,21 @@ class DashboardFragment : Fragment() {
             }
         }
 
-        // Search Logic
         etSearch.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) { filterTransactions(s.toString()) }
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
         })
 
-        // Month Navigation
         btnPrevMonth.setOnClickListener {
             selectedCalendar.add(Calendar.MONTH, -1)
             updateDateText()
-            observeDatabase() // Re-trigger filter
+            observeDatabase()
         }
         btnNextMonth.setOnClickListener {
             selectedCalendar.add(Calendar.MONTH, 1)
             updateDateText()
-            observeDatabase() // Re-trigger filter
+            observeDatabase()
         }
 
         updateDateText()
@@ -165,11 +179,127 @@ class DashboardFragment : Fragment() {
         return view
     }
 
+    // ================= GOOGLE GEMINI AI LOGIC =================
+
+    private fun showAiAgentDialog() {
+        val dialog = BottomSheetDialog(requireContext())
+        val sheetView = layoutInflater.inflate(R.layout.bottom_sheet_ai, null)
+        dialog.setContentView(sheetView)
+
+        val tvAiResponse = sheetView.findViewById<TextView>(R.id.tvAiResponse)
+        val etAiInput = sheetView.findViewById<TextInputEditText>(R.id.etAiInput)
+        val btnSendAi = sheetView.findViewById<ImageButton>(R.id.btnSendAi)
+        val aiLoadingBar = sheetView.findViewById<View>(R.id.aiLoadingBar)
+
+        btnSendAi.setOnClickListener {
+            val userQuestion = etAiInput.text.toString()
+            if (userQuestion.isNotEmpty()) {
+                etAiInput.text?.clear()
+                tvAiResponse.text = "District AI is analyzing..."
+                aiLoadingBar.visibility = View.VISIBLE
+
+                askDistrictAi(userQuestion, tvAiResponse, aiLoadingBar)
+            }
+        }
+        dialog.show()
+    }
+
+    private fun askDistrictAi(question: String, tvResponse: TextView, loadingBar: View) {
+        if (GEMINI_API_KEY == "YOUR_GEMINI_API_KEY_HERE" || GEMINI_API_KEY.isEmpty()) {
+            tvResponse.text = "Error: Please enter your Google Gemini API Key in the code."
+            loadingBar.visibility = View.GONE
+            return
+        }
+
+        // 1. Build the Data Context
+        var totalSpent = 0.0
+        val historyBuilder = StringBuilder()
+
+        currentMonthTransactions.forEach {
+            if(it.type == "DEBIT") {
+                totalSpent += it.amount
+                historyBuilder.append("- Spent ₹${it.amount} at ${it.merchant}\n")
+            } else {
+                historyBuilder.append("- Received ₹${it.amount} from ${it.merchant}\n")
+            }
+        }
+
+        val remainingBudget = monthlyBudget - totalSpent
+
+        // 2. The Prompt for Gemini
+        val systemPrompt = """
+            You are 'District AI', an elite, luxury financial assistant built into the District Finance app.
+            Your tone is professional, extremely concise, slightly strict but highly insightful. 
+            Do NOT use markdown. Keep answers under 3 sentences.
+            
+            USER FINANCIAL CONTEXT FOR THIS MONTH:
+            - Monthly Budget: ₹$monthlyBudget
+            - Total Spent: ₹$totalSpent
+            - Remaining Budget: ₹$remainingBudget
+            - Transaction History:
+            $historyBuilder
+            
+            USER QUESTION:
+            $question
+        """.trimIndent()
+
+        // 3. Construct JSON Payload for Gemini API
+        val jsonBody = JSONObject().apply {
+            val contentsArray = JSONArray()
+            val partsArray = JSONArray()
+            partsArray.put(JSONObject().put("text", systemPrompt))
+            contentsArray.put(JSONObject().put("parts", partsArray))
+            put("contents", contentsArray)
+        }
+
+        val requestBody = jsonBody.toString().toRequestBody("application/json".toMediaTypeOrNull())
+
+        // Hardcoded way: No '$' symbol!
+        val request = Request.Builder()
+            .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIzaSyDU-B-LoFKa8WfK_1jXj7cmRBR86Z65G_c")
+            .post(requestBody)
+            .build()
+
+        // 4. Make the Network Call
+        okHttpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                activity?.runOnUiThread {
+                    loadingBar.visibility = View.GONE
+                    tvResponse.text = "Connection failed. Please check your internet."
+                }
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                val responseData = response.body?.string()
+                activity?.runOnUiThread {
+                    loadingBar.visibility = View.GONE
+                    if (response.isSuccessful && responseData != null) {
+                        try {
+                            val jsonObject = JSONObject(responseData)
+                            val answer = jsonObject.getJSONArray("candidates")
+                                .getJSONObject(0)
+                                .getJSONObject("content")
+                                .getJSONArray("parts")
+                                .getJSONObject(0)
+                                .getString("text")
+                            tvResponse.text = answer
+                        } catch (e: Exception) {
+                            tvResponse.text = "Error parsing AI response."
+                            Log.e("DistrictAI", "Parsing Error", e)
+                        }
+                    } else {
+                        tvResponse.text = "API Error: ${response.code}\nCheck your API Key."
+                        Log.e("DistrictAI", "API Error: $responseData")
+                    }
+                }
+            }
+        })
+    }
+
     // ================= REAL-TIME DATA LOGIC =================
 
     private fun observeDatabase() {
         val dao = AppDatabase.get(requireContext()).transactionDao()
-        // Collect Flow: Updates automatically whenever DB changes
         lifecycleScope.launch {
             dao.getAll().collect { allTransactions ->
                 processAndDisplayData(allTransactions)
@@ -181,7 +311,6 @@ class DashboardFragment : Fragment() {
         val targetMonth = selectedCalendar.get(Calendar.MONTH)
         val targetYear = selectedCalendar.get(Calendar.YEAR)
 
-        // 1. Filter by Date (Include BOTH Income & Expense)
         val filteredList = all.filter {
             val txnDate = Calendar.getInstance()
             txnDate.timeInMillis = it.timestamp
@@ -189,12 +318,10 @@ class DashboardFragment : Fragment() {
                     txnDate.get(Calendar.YEAR) == targetYear
         }
 
-        // 2. Calculate Totals (Separate Logic)
         var totalSpent = 0.0
         val categoryMap = mutableMapOf<String, Double>()
 
         filteredList.forEach {
-            // Only count DEBITS for the "Total Spent" and Chart
             if (it.type == "DEBIT") {
                 totalSpent += it.amount
                 val cat = getCategory(it.merchant)
@@ -202,13 +329,10 @@ class DashboardFragment : Fragment() {
             }
         }
 
-        // 3. Store full list for Search/Adapter
         currentMonthTransactions = filteredList.sortedByDescending { it.timestamp }.toMutableList()
 
-        // 4. Update UI
         tvTotal.text = "₹${"%.2f".format(totalSpent)}"
 
-        // Budget Logic (Based on Spent only)
         val budget = if (monthlyBudget == 0.0) 1.0 else monthlyBudget
         val percentage = (totalSpent / budget) * 100
         progressBar.progress = percentage.toInt()
@@ -217,17 +341,15 @@ class DashboardFragment : Fragment() {
         if (remaining > 0) {
             tvBudgetLeft.text = "₹${"%.0f".format(remaining)} left"
             tvSmartInsight.text = "Safe"
-            tvSmartInsight.setTextColor(Color.parseColor("#CCFF00")) // Neon Green
+            tvSmartInsight.setTextColor(Color.parseColor("#4CAF50")) // Adjusted to standard green for light theme
         } else {
             tvBudgetLeft.text = "Over by ₹${"%.0f".format(Math.abs(remaining))}"
             tvSmartInsight.text = "Alert"
-            tvSmartInsight.setTextColor(Color.parseColor("#FF4081")) // Hot Pink
+            tvSmartInsight.setTextColor(Color.parseColor("#FF5252")) // Adjusted to standard red for light theme
         }
 
-        // Update Charts & Lists
         updatePieChart(categoryMap)
 
-        // If search is active, don't reset list, let filter handle it
         if (etSearch.text.isNullOrEmpty()) {
             updateAdapter(currentMonthTransactions)
         } else {
@@ -255,15 +377,12 @@ class DashboardFragment : Fragment() {
         }
     }
 
-    // ================= OPERATIONS (ADD/DELETE) =================
+    // ================= OPERATIONS =================
 
     private fun saveManualTransaction(amount: Double, description: String) {
         lifecycleScope.launch(Dispatchers.IO) {
             val transaction = TransactionEntity(
-                merchant = description,
-                amount = amount,
-                timestamp = System.currentTimeMillis(),
-                type = "DEBIT" // Manual entry default
+                merchant = description, amount = amount, timestamp = System.currentTimeMillis(), type = "DEBIT"
             )
             AppDatabase.get(requireContext()).transactionDao().insert(transaction)
         }
@@ -287,7 +406,7 @@ class DashboardFragment : Fragment() {
         }
     }
 
-    // ================= SMS PARSING (SMART) =================
+    // ================= SMS PARSING =================
 
     private fun readInboxAndSaveToDb() {
         lifecycleScope.launch(Dispatchers.IO) {
@@ -304,16 +423,13 @@ class DashboardFragment : Fragment() {
                         val body = it.getString(bodyIndex) ?: ""
                         val date = it.getLong(dateIndex)
 
-                        // 1. Check for INCOME
                         if (body.contains("credited", true) || body.contains("received", true) || body.contains("deposited", true)) {
                             val amount = extractAmount(body)
                             if (amount > 0) {
-                                // Simple check to avoid duplicates (naive)
                                 val transaction = TransactionEntity(merchant = "Income", amount = amount, timestamp = date, type = "CREDIT")
                                 dao.insert(transaction)
                             }
                         }
-                        // 2. Check for EXPENSE
                         else if (body.contains("Sent Rs.", true) || body.contains("debited", true) || body.contains("spent", true) || body.contains("paid", true)) {
                             val amount = extractAmount(body)
                             if (amount > 0) {
