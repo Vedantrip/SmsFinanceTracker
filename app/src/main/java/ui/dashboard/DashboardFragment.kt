@@ -78,7 +78,7 @@ class DashboardFragment : Fragment() {
     private var currentMonthTransactions: MutableList<TransactionEntity> = mutableListOf()
 
     // --- GEMINI AI AGENT CONFIG ---
-    private val GEMINI_API_KEY = "ApiKeys.GEMINI_KEY"
+    private val GEMINI_API_KEY = ApiKeys.GEMINI_KEY
     private val okHttpClient = OkHttpClient()
 
     // Neon Palette
@@ -256,7 +256,7 @@ class DashboardFragment : Fragment() {
 
         // Hardcoded way: No '$' symbol!
         val request = Request.Builder()
-            .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=ApiKeys.GEMINI_KEY")
+            .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$GEMINI_API_KEY")
             .post(requestBody)
             .build()
 
@@ -408,13 +408,29 @@ class DashboardFragment : Fragment() {
 
     // ================= SMS PARSING =================
 
+    // ================= SMS PARSING =================
+
     private fun readInboxAndSaveToDb() {
         lifecycleScope.launch(Dispatchers.IO) {
             val dao = AppDatabase.get(requireContext()).transactionDao()
+            // 1. Get the time we last checked for messages
+            val prefs = requireContext().getSharedPreferences("FinancePrefs", Context.MODE_PRIVATE)
+            val lastSyncTime = prefs.getLong("LAST_SMS_SYNC", 0L)
+            var newMaxTimestamp = lastSyncTime
+
             try {
+                // 2. Only ask Android for messages newer than our last sync!
+                val selection = "date > ?"
+                val selectionArgs = arrayOf(lastSyncTime.toString())
+
                 val cursor = requireContext().contentResolver.query(
-                    android.net.Uri.parse("content://sms/inbox"), null, null, null, null
+                    android.net.Uri.parse("content://sms/inbox"),
+                    null,
+                    selection,
+                    selectionArgs,
+                    "date ASC" // Read oldest to newest so the timestamp updates correctly
                 )
+
                 cursor?.use {
                     val bodyIndex = it.getColumnIndex("body")
                     val dateIndex = it.getColumnIndex("date")
@@ -422,6 +438,11 @@ class DashboardFragment : Fragment() {
                     while (it.moveToNext()) {
                         val body = it.getString(bodyIndex) ?: ""
                         val date = it.getLong(dateIndex)
+
+                        // Update our highest timestamp tracker
+                        if (date > newMaxTimestamp) {
+                            newMaxTimestamp = date
+                        }
 
                         if (body.contains("credited", true) || body.contains("received", true) || body.contains("deposited", true)) {
                             val amount = extractAmount(body)
@@ -440,6 +461,10 @@ class DashboardFragment : Fragment() {
                         }
                     }
                 }
+
+                // 3. Save the new highest timestamp so we don't read these again next time
+                prefs.edit().putLong("LAST_SMS_SYNC", newMaxTimestamp).apply()
+
             } catch (e: Exception) { Log.e("Dashboard", "Error reading SMS: ${e.message}") }
         }
     }
