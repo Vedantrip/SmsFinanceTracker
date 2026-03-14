@@ -78,7 +78,7 @@ class DashboardFragment : Fragment() {
     private var currentMonthTransactions: MutableList<TransactionEntity> = mutableListOf()
 
     // --- GEMINI AI AGENT CONFIG ---
-    private val GEMINI_API_KEY = "AIzaSyDU-B-LoFKa8WfK_1jXj7cmRBR86Z65G_c"
+    private val GEMINI_API_KEY = "ApiKeys.GEMINI_KEY"
     private val okHttpClient = OkHttpClient()
 
     // Neon Palette
@@ -256,7 +256,7 @@ class DashboardFragment : Fragment() {
 
         // Hardcoded way: No '$' symbol!
         val request = Request.Builder()
-            .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIzaSyDU-B-LoFKa8WfK_1jXj7cmRBR86Z65G_c")
+            .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=ApiKeys.GEMINI_KEY")
             .post(requestBody)
             .build()
 
